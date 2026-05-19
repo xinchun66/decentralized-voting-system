@@ -1,0 +1,228 @@
+.app-shell {
+  min-height: 100vh;
+  background: linear-gradient(165deg, #eef2ff 0%, #f8fafc 45%, #ffffff 100%);
+  color: #0f172a;
+  text-align: left;
+}
+
+.app-shell #root,
+.app-shell {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  border: none;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid #e2e8f0;
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.app-nav-brand {
+  font-size: 18px;
+  font-weight: 700;
+  color: #4c1d95;
+  text-decoration: none;
+}
+
+.app-nav-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-nav-links a {
+  padding: 8px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #334155;
+  transition: background 0.15s;
+}
+
+.app-nav-links a:hover,
+.app-nav-links a.active {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.app-main {
+  padding: 24px 20px 48px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+  text-align: center;
+}
+
+.page-subtitle {
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+  margin: 0 0 32px 0;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+}
+
+.btn-primary {
+  padding: 12px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 10px 20px;
+  font-size: 14px;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.landing-hero {
+  text-align: center;
+  padding: 48px 24px 32px;
+}
+
+.landing-hero h1 {
+  font-size: 36px;
+  color: #0f172a !important;
+  margin: 20px 0 12px;
+  letter-spacing: -0.5px;
+}
+
+.landing-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.feature-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: left;
+}
+
+.feature-card h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.feature-card p {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.landing-cta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.landing-cta-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #0f172a;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.landing-cta-grid .landing-cta-card {
+  border: 1px solid #c4b5fd;
+  background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
+}
+
+.landing-cta-grid .landing-cta-card strong {
+  font-size: 16px;
+  color: #5b21b6;
+}
+
+.landing-cta-grid .landing-cta-card span {
+  font-size: 13px;
+  color: #475569;
+}
+
+.landing-cta-grid .landing-cta-card:hover {
+  border-color: #a78bfa;
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.12);
+}
+
+.proposal-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 22px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.proposal-card:hover {
+  border-color: #a78bfa;
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.12);
+}
+
+.proposal-card h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}

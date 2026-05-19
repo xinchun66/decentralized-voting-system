@@ -1,192 +1,183 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createProposal } from "../utils/web3.js";
+import {
+  DURATION_UNITS,
+  formatDurationSeconds,
+  getDurationInputHints,
+  previewContractSeconds,
+  toContractSeconds,
+} from "../utils/duration.js";
 
 export default function CreateProposal() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [durationHours, setDurationHours] = useState("");
+  const [description, setDescription] = useState("");
+  const [durationValue, setDurationValue] = useState("24");
+  const [durationUnit, setDurationUnit] = useState("hours");
+  const [requiresPoints, setRequiresPoints] = useState(false);
+  const [useWeight, setUseWeight] = useState(false);
+  const [realSettlement, setRealSettlement] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const hints = getDurationInputHints(durationUnit);
+  const previewSeconds = previewContractSeconds(durationValue, durationUnit);
+
   const handleCreate = async () => {
-    if (!title || !content || !durationHours) {
-      alert("请填写所有字段！");
+    if (!title || !durationValue) {
+      alert("请填写所有必填字段！");
+      return;
+    }
+
+    let secondsOnChain;
+    try {
+      secondsOnChain = toContractSeconds(durationValue, durationUnit);
+    } catch (err) {
+      alert(err.message);
       return;
     }
 
     try {
       setLoading(true);
-      const now = Math.floor(Date.now() / 1000);
-      const endTime = now + Number(durationHours) * 3600;
-      await createProposal(title, content, endTime);
+      alert("请在 MetaMask 中确认交易签名");
+      await createProposal(title, description.trim(), secondsOnChain, requiresPoints, useWeight, realSettlement);
       alert("✅ 提案创建成功！");
-      navigate("/");
+      navigate("/proposals");
     } catch (err) {
       console.error(err);
-      alert("❌ 创建失败：" + err.message);
+      if (err.message?.includes("用户取消")) alert("您已取消交易");
+      else if (err.message?.includes("Not admin")) alert("只有管理员才能创建提案");
+      else alert("❌ 创建失败：" + err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{
-      width: "100%",
-      maxWidth: "900px",
-      margin: "0 auto",
-      padding: "40px 20px",
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-      boxSizing: "border-box"
-    }}>
-      <div style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "32px",
-        flexWrap: "wrap",
-        gap: "16px"
-      }}>
-        <h1 style={{ 
-          fontSize: "26px", 
-          fontWeight: 700, 
-          margin: 0,
-          color: "#1f2937"
-        }}>创建链上提案</h1>
-        
-        <button 
-          onClick={() => navigate("/")}
-          style={{
-            padding: "10px 20px",
-            background: "#f3e8ff",
-            color: "#7e22ce",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            fontSize: "15px",
-            fontWeight: 600,
-            transition: "all 0.2s",
-            boxShadow: "0 2px 8px rgba(126,34,206,0.1)"
-          }}
-          onMouseOver={e => e.target.style.background = "#e9d5ff"}
-          onMouseOut={e => e.target.style.background = "#f3e8ff"}
-        >
-          ← 返回首页
-        </button>
-      </div>
+    <>
+      <h1 className="page-title">创建链上提案</h1>
+      <p className="page-subtitle">管理员可配置投票模式与结算方式</p>
 
-      <div style={{
-        background: "#ffffff",
-        border: "1px solid #f3f4f6",
-        borderRadius: "18px",
-        padding: "36px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.06)"
-      }}>
-        <div style={{ marginBottom: "24px" }}>
-          <label style={{ 
-            display: "block", 
-            marginBottom: "10px", 
-            fontWeight: 600,
-            color: "#1f2937",
-            fontSize: "15px"
-          }}>提案标题</label>
+      <div className="card" style={{ maxWidth: 640, margin: "0 auto" }}>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", marginBottom: 8, fontWeight: 600, color: "#0f172a" }}>提案标题</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="输入提案标题"
-            style={{
-              width: "100%",
-              padding: "14px 18px",
-              borderRadius: "12px",
-              border: "1px solid #e5e7eb",
-              fontSize: "15px",
-              boxSizing: "border-box",
-              outline: "none",
-              transition: "all 0.2s"
-            }}
-            onFocus={(e) => e.target.style.borderColor = "#7c3aed"}
-            onBlur={(e) => e.target.style.borderColor = "#e5e7eb"}
+            style={inputStyle}
           />
         </div>
 
-        <div style={{ marginBottom: "24px" }}>
-          <label style={{ 
-            display: "block", 
-            marginBottom: "10px", 
-            fontWeight: 600,
-            color: "#1f2937",
-            fontSize: "15px"
-          }}>提案详细内容</label>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", marginBottom: 8, fontWeight: 600, color: "#0f172a" }}>提案描述</label>
           <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows="6"
-            placeholder="详细描述提案..."
-            style={{
-              width: "100%",
-              padding: "14px 18px",
-              borderRadius: "12px",
-              border: "1px solid #e5e7eb",
-              fontSize: "15px",
-              resize: "vertical",
-              boxSizing: "border-box",
-              outline: "none",
-              transition: "all 0.2s"
-            }}
-            onFocus={(e) => e.target.style.borderColor = "#7c3aed"}
-            onBlur={(e) => e.target.style.borderColor = "#e5e7eb"}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="输入提案详细说明（选填，最多 1000 字）"
+            rows={4}
+            maxLength={1000}
+            style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }}
           />
         </div>
 
-        <div style={{ marginBottom: "32px" }}>
-          <label style={{ 
-            display: "block", 
-            marginBottom: "10px", 
-            fontWeight: 600,
-            color: "#1f2937",
-            fontSize: "15px"
-          }}>投票时长（小时）</label>
-          <input
-            type="number"
-            value={durationHours}
-            onChange={(e) => setDurationHours(e.target.value)}
-            placeholder="例如：24 / 48 / 72"
-            style={{
-              width: "100%",
-              padding: "14px 18px",
-              borderRadius: "12px",
-              border: "1px solid #e5e7eb",
-              fontSize: "15px",
-              boxSizing: "border-box",
-              outline: "none",
-              transition: "all 0.2s"
-            }}
-            onFocus={(e) => e.target.style.borderColor = "#7c3aed"}
-            onBlur={(e) => e.target.style.borderColor = "#e5e7eb"}
-          />
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", marginBottom: 8, fontWeight: 600, color: "#0f172a" }}>投票时长</label>
+          <div style={{ display: "flex", gap: 10 }}>
+            <input
+              type="number"
+              value={durationValue}
+              onChange={(e) => setDurationValue(e.target.value)}
+              placeholder={hints.placeholder}
+              min={hints.min}
+              max={hints.max}
+              step={hints.step}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <select
+              value={durationUnit}
+              onChange={(e) => setDurationUnit(e.target.value)}
+              style={{
+                padding: "14px 12px",
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                fontSize: 16,
+                fontWeight: 500,
+                backgroundColor: "#f8fafc",
+                color: "#0f172a",
+                colorScheme: "light",
+                minWidth: 96,
+              }}
+            >
+              {DURATION_UNITS.map((u) => (
+                <option key={u.value} value={u.value}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p style={{ color: "#64748b", fontSize: 13, margin: "8px 0 0" }}>
+            {previewSeconds != null
+              ? `链上时长：${formatDurationSeconds(previewSeconds)}（${previewSeconds} 秒）`
+              : "请填写有效时长（1 秒～30 天）"}
+          </p>
         </div>
 
-        <button
-          onClick={handleCreate}
-          disabled={loading}
-          style={{
-            width: "100%",
-            padding: "16px",
-            backgroundColor: loading ? "#d8b4fe" : "#7c3aed",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "12px",
-            fontSize: "16px",
-            fontWeight: 600,
-            cursor: loading ? "not-allowed" : "pointer",
-            transition: "all 0.2s",
-            boxShadow: loading ? "none" : "0 4px 12px rgba(124,58,237,0.2)"
-          }}
-        >
-          {loading ? "提交中..." : "✅ 创建提案"}
+        <Option
+          checked={requiresPoints}
+          onChange={setRequiresPoints}
+          title="需要积分投票（质押）"
+          desc="投票时按权重扣除积分作为质押；真实结算时胜方返还+奖励，败方额外罚分。"
+        />
+        <Option
+          checked={useWeight}
+          onChange={setUseWeight}
+          title="按权重计票"
+          desc="启用后用户可指定 1～1000 的票权权重；不启用则固定为一人一票（权重=1）。"
+        />
+        <Option
+          checked={realSettlement}
+          onChange={setRealSettlement}
+          title="真实链上结算"
+          desc="结束后用户点击「链上结算」修改 userPoints；不勾选则仅前端模拟结算，不改链上积分。"
+        />
+
+        <button type="button" className="btn-primary" style={{ width: "100%", marginTop: 8 }} onClick={handleCreate} disabled={loading}>
+          {loading ? "提交中…" : "创建提案"}
         </button>
       </div>
+    </>
+  );
+}
+
+function Option({ checked, onChange, title, desc }) {
+  return (
+    <div
+      style={{
+        marginBottom: 16,
+        padding: 14,
+        background: "#f8fafc",
+        borderRadius: 10,
+        border: "1px solid #e2e8f0",
+      }}
+    >
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 12, fontWeight: 600, color: "#0f172a", cursor: "pointer" }}>
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 18, height: 18, marginTop: 2 }} />
+        {title}
+      </label>
+      <p style={{ color: "#64748b", fontSize: 13, margin: "8px 0 0 30px", lineHeight: 1.5 }}>{desc}</p>
     </div>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  padding: 14,
+  borderRadius: 8,
+  border: "1px solid #cbd5e1",
+  fontSize: 16,
+  boxSizing: "border-box",
+  backgroundColor: "#ffffff",
+  color: "#0f172a",
+};

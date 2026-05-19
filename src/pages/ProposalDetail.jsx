@@ -1,397 +1,309 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getAllProposals, voteProposal, getUserPoints, connectWallet } from "../utils/web3.js";
+import {
+  connectWallet,
+  getProposalDetail,
+  voteProposal,
+  getUserPoints,
+  getUserVote,
+  settleProposal,
+} from "../utils/web3.js";
+import { useWallet } from "../context/WalletContext.jsx";
+import { getProposalModeBadges } from "../utils/proposalModes.js";
+import ProposalMarketSection from "../components/ProposalMarketSection.jsx";
 
-function ProposalDetail() {
+export default function ProposalDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [proposal, setProposal] = useState(null);
-  const [voteRate, setVoteRate] = useState({ yes: 0, no: 0 });
   const [account, setAccount] = useState("");
   const [userPoints, setUserPoints] = useState(0);
   const [hasVoted, setHasVoted] = useState(false);
-  const [isVoting, setIsVoting] = useState(false);
   const [userVoteType, setUserVoteType] = useState(null);
-  const circumference = 2 * Math.PI * 45;
+  const [voteWeight, setVoteWeight] = useState(1);
+  const [voteSettled, setVoteSettled] = useState(false);
+  const [voteWeightInput, setVoteWeightInput] = useState("1");
+  const [isVoting, setIsVoting] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const { isAdmin, refreshAccount } = useWallet();
 
   useEffect(() => {
     if (id === undefined) return;
     loadProposal();
-    loadWalletInfo();
+    restoreWallet();
   }, [id]);
 
   useEffect(() => {
-    if (!proposal || !account) return;
-    checkIfVoted();
+    if (proposal && account) refreshVoteState();
   }, [proposal, account]);
 
-  async function loadWalletInfo() {
+  async function restoreWallet() {
+    if (!window.ethereum) return;
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      if (accounts[0]) {
+        setAccount(accounts[0]);
+        const pts = await getUserPoints(accounts[0]);
+        setUserPoints(Number(pts));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleConnect() {
     try {
       const addr = await connectWallet();
       setAccount(addr);
-      const pts = await getUserPoints(addr);
-      setUserPoints(Number(pts));
-      checkIfVoted();
-    } catch (err) {
-      console.error(err);
+      setUserPoints(Number(await getUserPoints(addr)));
+    } catch (e) {
+      alert(e.message);
     }
   }
 
   async function loadProposal() {
     try {
-      const list = await getAllProposals();
-      const p = list[id];
-
+      const p = await getProposalDetail(id);
       setProposal({
+        id,
         title: p.title,
-        content: p.content,
+        content: p.description,
         yesVotes: p.yesVotes.toString(),
         noVotes: p.noVotes.toString(),
         endTime: p.endTime.toString(),
-        exists: p.exists
+        status: Number(p.status),
+        creator: p.creator,
+        requiresPoints: Boolean(p.requiresPoints),
+        useWeight: Boolean(p.useWeight),
+        realSettlement: Boolean(p.realSettlement),
       });
-
-      const yesVotes = Number(p.yesVotes);
-      const noVotes = Number(p.noVotes);
-      const total = yesVotes + noVotes;
-
-      if (total > 0) {
-        setVoteRate({
-          yes: Math.round((yesVotes / total) * 100),
-          no: Math.round((noVotes / total) * 100),
-        });
-      } else {
-        setVoteRate({ yes: 0, no: 0 });
-      }
-    } catch (error) {
-      console.error("加载提案失败:", error);
+    } catch (e) {
+      console.error("加载提案失败", e);
     }
   }
 
-  async function checkIfVoted() {
+  async function refreshVoteState() {
     try {
-      const { getContract } = require("../utils/web3.js");
-      const contract = await getContract();
-      const voted = await contract.hasVoted(id, account);
-      setHasVoted(voted);
-
-      if (voted) {
-        const t = localStorage.getItem(`vote_${id}_${account}`) || "";
-        setUserVoteType(t === "yes" ? "yes" : "no");
-      } else {
-        setUserVoteType(null);
-      }
-    } catch (err) {
-      console.error("检查投票状态失败:", err);
-      setHasVoted(false);
+      const v = await getUserVote(id, account);
+      setHasVoted(v.voted);
+      setVoteSettled(v.settled);
+      setVoteWeight(v.weight || 1);
+      if (v.voted) setUserVoteType(v.support ? "yes" : "no");
+      else setUserVoteType(null);
+    } catch (e) {
+      console.error(e);
     }
   }
 
-  const isExpired = () => {
-    if (!proposal) return false;
-    return Date.now() > parseInt(proposal.endTime) * 1000;
-  };
-
-  const formatEndTime = (timestamp) => {
-    const date = new Date(parseInt(timestamp) * 1000);
-    return date.toLocaleString("zh-CN");
-  };
+  const isExpired = () => proposal && Date.now() > parseInt(proposal.endTime, 10) * 1000;
 
   async function handleVote(support) {
-    if (hasVoted) {
-      alert("⚠️ 您已投过票，无法重复投票！");
+    if (!account) {
+      alert("请先连接钱包");
       return;
     }
-    if (userPoints < 10) {
-      alert("⚠️ 积分不足，需要至少10积分");
+    if (hasVoted) {
+      alert("您已投过票");
       return;
     }
     if (isExpired()) {
-      alert("⚠️ 投票已结束！");
+      alert("投票已结束");
       return;
+    }
+
+    let weight = 1;
+    if (proposal.useWeight) {
+      weight = parseInt(voteWeightInput, 10);
+      if (!Number.isFinite(weight) || weight < 1 || weight > 1000) {
+        alert("权重须为 1～1000 的整数");
+        return;
+      }
+    }
+
+    if (proposal.requiresPoints) {
+      const pts = Number(await getUserPoints(account));
+      if (pts < weight) {
+        alert(`积分不足，本提案需质押 ${weight} 积分`);
+        return;
+      }
     }
 
     setIsVoting(true);
     try {
-      await voteProposal(id, support);
-      alert("✅ 投票成功！");
-      
-      const voteType = support ? "yes" : "no";
-      localStorage.setItem(`vote_${id}_${account}`, voteType);
-      setUserVoteType(voteType);
-      setHasVoted(true);
-      loadProposal();
+      await voteProposal(id, support, weight);
+      alert("投票成功");
+      await loadProposal();
+      await refreshVoteState();
+      setUserPoints(Number(await getUserPoints(account)));
+      await refreshAccount();
     } catch (err) {
-      console.error(err);
       const msg = err.message || "";
-      if (msg.includes("Already voted")) {
-        alert("⚠️ 您已投过票！");
-        setHasVoted(true);
-      } else if (msg.includes("expired")) {
-        alert("⚠️ 投票已结束！");
-      } else if (msg.includes("points")) {
-        alert("⚠️ 积分不足！");
-      } else {
-        alert("❌ 投票失败：" + msg);
-      }
+      if (msg.includes("用户取消")) alert("您已取消交易");
+      else if (msg.includes("Insufficient")) alert("积分不足");
+      else alert("投票失败：" + msg);
     } finally {
       setIsVoting(false);
     }
   }
 
+  async function handleSettle() {
+    if (!account) return;
+    setSettling(true);
+    try {
+      await settleProposal(id);
+      alert("链上结算完成");
+      setUserPoints(Number(await getUserPoints(account)));
+      await refreshVoteState();
+    } catch (e) {
+      alert("结算失败：" + (e.message || e));
+    } finally {
+      setSettling(false);
+    }
+  }
+
   if (!proposal) {
     return (
-      <div style={{ 
-        width: "100vw", 
-        height: "50vh", 
-        display: "flex", 
-        flexDirection: "column",
-        alignItems: "center", 
-        justifyContent: "center" 
-      }}>
-        <div style={{ fontSize: "48px", marginBottom: "12px" }}>⏳</div>
-        <p style={{ fontSize: "16px", color: "#666" }}>提案加载中...</p>
-      </div>
+      <p style={{ textAlign: "center", color: "#64748b", padding: 40 }}>
+        加载中…
+      </p>
     );
   }
 
-  const yesVotes = Number(proposal.yesVotes);
-  const noVotes = Number(proposal.noVotes);
-  const totalVotes = yesVotes + noVotes;
-  const strokeDashoffset = circumference - (voteRate.yes / 100) * circumference;
+  const expired = isExpired();
+  const badges = getProposalModeBadges(proposal);
 
   return (
-    <div style={{
-      width: "100%",
-      maxWidth: "900px",
-      margin: "0 auto",
-      padding: "40px 20px",
-      fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-      boxSizing: "border-box"
-    }}>
-      {/* 返回 + 标题 */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: "32px",
-        flexWrap: "wrap",
-        gap: "16px"
-      }}>
-        <h1 style={{ 
-          fontSize: "26px", 
-          fontWeight: 700, 
-          margin: 0,
-          color: "#1f2937",
-          lineHeight: 1.3
-        }}>{proposal.title}</h1>
-        
-        <button
-          onClick={() => navigate("/")}
-          style={{
-            padding: "10px 20px",
-            background: "#f3e8ff",
-            color: "#7e22ce",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            fontSize: "15px",
-            fontWeight: 600,
-            transition: "all 0.2s",
-            boxShadow: "0 2px 8px rgba(126,34,206,0.1)"
-          }}
-          onMouseOver={e => e.target.style.background = "#e9d5ff"}
-          onMouseOut={e => e.target.style.background = "#f3e8ff"}
-        >
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
+        <div>
+          <h1 className="page-title" style={{ textAlign: "left", fontSize: 24, marginBottom: 8 }}>
+            {proposal.title}
+          </h1>
+          <div className="badge-row">
+            {badges.map((b) => (
+              <span key={b.label} className="badge" style={{ background: b.bg, color: b.color }}>
+                {b.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button type="button" className="btn-secondary" onClick={() => navigate("/proposals")}>
           ← 返回列表
         </button>
       </div>
 
-      {/* 提案详情卡片 */}
-      <div style={{
-        background: "#ffffff",
-        padding: "28px 32px",
-        borderRadius: "16px",
-        margin: "0 auto 32px auto",
-        maxWidth: "700px",
-        lineHeight: "1.8",
-        fontSize: "15px",
-        border: "1px solid #f3f4f6",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.04)"
-      }}>
-        <h3 style={{ 
-          margin: "0 0 14px 0", 
-          fontSize: "18px", 
-          fontWeight: 600,
-          color: "#1f2937"
-        }}>📝 提案详情</h3>
-        <p style={{ 
-          margin: 0, 
-          color: "#4b5563",
-          fontSize: "15px"
-        }}>{proposal.content || "暂无详情"}</p>
+      <div className="card" style={{ marginBottom: 24, maxWidth: 720, marginLeft: "auto", marginRight: "auto" }}>
+        <h3 style={{ margin: "0 0 10px", color: "#0f172a" }}>提案描述</h3>
+        <p style={{ margin: 0, color: "#334155", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+          {proposal.content?.trim() || "暂无描述"}
+        </p>
+        <p style={{ margin: "12px 0 0", fontSize: 13, color: "#64748b" }}>
+          创建者 {proposal.creator?.slice(0, 6)}…{proposal.creator?.slice(-4)} · ID {proposal.id}
+        </p>
       </div>
 
-      {/* 投票结果 */}
-      <div style={{
-        background: "#ffffff",
-        borderRadius: "18px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-        padding: "36px",
-        maxWidth: "340px",
-        margin: "0 auto 36px auto"
-      }}>
-        <h3 style={{ 
-          textAlign: "center", 
-          fontSize: "17px", 
-          fontWeight: 600,
-          marginBottom: "24px",
-          color: "#1f2937"
-        }}>📊 投票结果</h3>
+      <ProposalMarketSection
+        yesVotes={proposal.yesVotes}
+        noVotes={proposal.noVotes}
+        expired={expired}
+        userVoteType={hasVoted ? userVoteType : null}
+        voteWeight={voteWeight}
+        requiresPoints={proposal.requiresPoints}
+        useWeight={proposal.useWeight}
+        realSettlement={proposal.realSettlement}
+        voteSettled={voteSettled}
+        settling={settling}
+        onSettle={handleSettle}
+      />
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "28px" }}>
-          <svg width="160" height="160" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" fill="#f9fafb" />
-            {totalVotes > 0 && (
-              <circle
-                cx="50" cy="50" r="45" fill="none"
-                stroke="#22c55e" strokeWidth="10"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                style={{ transition: "stroke-dashoffset 0.5s ease", transform: "rotate(-90deg)", transformOrigin: "center" }}
+      <p style={{ textAlign: "center", color: "#64748b", fontSize: 14, margin: "20px 0" }}>
+        截止：{new Date(parseInt(proposal.endTime, 10) * 1000).toLocaleString("zh-CN")}
+      </p>
+
+      {!account ? (
+        <div style={{ textAlign: "center" }}>
+          <button type="button" className="btn-primary" onClick={handleConnect}>
+            连接钱包后投票
+          </button>
+        </div>
+      ) : !expired ? (
+        <div style={{ maxWidth: 480, margin: "0 auto" }}>
+          {proposal.useWeight && !hasVoted && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", marginBottom: 6, fontWeight: 600, color: "#0f172a" }}>
+                投票权重（1～1000）
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={1000}
+                value={voteWeightInput}
+                onChange={(e) => setVoteWeightInput(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: 12,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  color: "#0f172a",
+                }}
               />
-            )}
-            <text x="50" y="48" textAnchor="middle" fontSize="18" fontWeight="bold" fill="#1f2937">
-              {totalVotes > 0 ? `${voteRate.yes}%` : "0%"}
-            </text>
-            <text x="50" y="66" textAnchor="middle" fontSize="12" fill="#6b7280">支持</text>
-          </svg>
-        </div>
-
-        <div style={{ marginBottom: "18px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-            <span style={{ color: "#16a34a", fontWeight: 500 }}>支持票</span>
-            <span style={{ color: "#374151" }}>{yesVotes} 票</span>
-          </div>
-          <div style={{ height: "10px", background: "#f3f4f6", borderRadius: "10px" }}>
-            <div style={{ height: "100%", width: `${voteRate.yes}%`, background: "#22c55e", borderRadius: "10px" }} />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: "18px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-            <span style={{ color: "#dc2626", fontWeight: 500 }}>反对票</span>
-            <span style={{ color: "#374151" }}>{noVotes} 票</span>
-          </div>
-          <div style={{ height: "10px", background: "#f3f4f6", borderRadius: "10px" }}>
-            <div style={{ height: "100%", width: `${voteRate.no}%`, background: "#ef4444", borderRadius: "10px" }} />
-          </div>
-        </div>
-
-        <div style={{ 
-          display: "flex", 
-          justifyContent: "space-between", 
-          borderTop: "1px solid #f3f4f6", 
-          paddingTop: "18px",
-          marginTop: "8px"
-        }}>
-          <span style={{ color: "#6b7280" }}>总投票数</span>
-          <span style={{ fontWeight: 600, color: "#1f2937" }}>{totalVotes}</span>
-        </div>
-      </div>
-
-      {/* 截止时间 */}
-      <div style={{ 
-        textAlign: "center", 
-        marginBottom: "36px", 
-        fontSize: "15px", 
-        color: "#6b7280",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "8px"
-      }}>
-        <span>⏰</span>
-        <span>投票截止时间：{formatEndTime(proposal.endTime)}</span>
-      </div>
-
-      {/* 投票按钮 */}
-      {!isExpired() ? (
-        <div>
-          <div style={{ display: "flex", gap: "18px", justifyContent: "center" }}>
+              {proposal.requiresPoints && (
+                <p style={{ fontSize: 13, color: "#64748b", margin: "6px 0 0" }}>
+                  将质押 {voteWeightInput || 1} 积分
+                </p>
+              )}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
             <button
+              type="button"
               onClick={() => handleVote(true)}
-              disabled={hasVoted || isVoting || userPoints < 10}
-              style={{
-                padding: "14px 36px",
-                background: hasVoted ? "#d1fae5" : "#22c55e",
-                color: hasVoted ? "#065f46" : "#ffffff",
-                border: "none",
-                borderRadius: "12px",
-                cursor: hasVoted ? "not-allowed" : "pointer",
-                fontSize: "15px",
-                fontWeight: 600,
-                transition: "all 0.2s",
-                boxShadow: hasVoted ? "none" : "0 4px 12px rgba(34,197,94,0.2)",
-                opacity: hasVoted ? 0.9 : 1
-              }}
+              disabled={hasVoted || isVoting}
+              style={voteBtnStyle("#dcfce7", "#166534", hasVoted)}
             >
-              {isVoting ? "投票中..." : (hasVoted ? "✅ 已投票" : "👍 支持")}
+              {hasVoted ? "已投票" : "支持 YES"}
             </button>
-
             <button
+              type="button"
               onClick={() => handleVote(false)}
-              disabled={hasVoted || isVoting || userPoints < 10}
-              style={{
-                padding: "14px 36px",
-                background: hasVoted ? "#fee2e2" : "#ef4444",
-                color: hasVoted ? "#991b1b" : "#ffffff",
-                border: "none",
-                borderRadius: "12px",
-                cursor: hasVoted ? "not-allowed" : "pointer",
-                fontSize: "15px",
-                fontWeight: 600,
-                transition: "all 0.2s",
-                boxShadow: hasVoted ? "none" : "0 4px 12px rgba(239,68,68,0.2)",
-                opacity: hasVoted ? 0.9 : 1
-              }}
+              disabled={hasVoted || isVoting}
+              style={voteBtnStyle("#fee2e2", "#991b1b", hasVoted)}
             >
-              {isVoting ? "投票中..." : (hasVoted ? "✅ 已投票" : "👎 反对")}
+              {hasVoted ? "已投票" : "反对 NO"}
             </button>
           </div>
-
           {hasVoted && (
-            <p style={{ 
-              textAlign:"center", 
-              marginTop:"16px", 
-              fontSize:"15px",
-              color: "#4b5563"
-            }}>
-              ✅ 您已投
-              <span style={{ 
-                color: userVoteType === "yes" ? "#16a34a" : "#dc2626", 
-                fontWeight:"600" 
-              }}>
-                {userVoteType === "yes" ? " 支持票" : " 反对票"}
-              </span>
+            <p style={{ textAlign: "center", marginTop: 12, color: "#334155" }}>
+              您已投{" "}
+              <strong style={{ color: userVoteType === "yes" ? "#16a34a" : "#dc2626" }}>
+                {userVoteType === "yes" ? "YES" : "NO"}
+              </strong>
+              {voteWeight > 1 ? `，权重 ${voteWeight}` : ""}
             </p>
           )}
         </div>
       ) : (
-        <div style={{
-          padding: "16px 32px",
-          background: "#f9fafb",
-          color: "#6b7280",
-          borderRadius: "12px",
-          textAlign: "center",
-          maxWidth: "300px",
-          margin: "0 auto"
-        }}>
-          <span>✅ 投票已结束</span>
-        </div>
+        <p style={{ textAlign: "center", color: "#64748b" }}>投票已结束</p>
       )}
+
+      <div className="card" style={{ maxWidth: 500, margin: "24px auto 0", fontSize: 14, color: "#475569" }}>
+        <p style={{ margin: "0 0 6px" }}>地址：{account ? `${account.slice(0, 6)}…${account.slice(-4)}` : "未连接"}</p>
+        <p style={{ margin: "0 0 6px" }}>积分：{userPoints}</p>
+        <p style={{ margin: 0 }}>角色：{isAdmin ? "管理员" : "普通用户"}</p>
+      </div>
     </div>
   );
 }
 
-export default ProposalDetail;
+function voteBtnStyle(bg, color, disabled) {
+  return {
+    padding: "12px 28px",
+    background: bg,
+    color,
+    border: "none",
+    borderRadius: 8,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.65 : 1,
+    fontWeight: 600,
+  };
+}

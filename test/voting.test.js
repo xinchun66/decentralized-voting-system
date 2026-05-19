@@ -2,17 +2,17 @@ import { ethers } from "ethers";
 
 const CONTRACT_ABI = [
   "function getProposalCount() view returns(uint256)",
-  "function proposals(uint256) view returns(string,uint256,uint256,uint256,bool)",
+  "function proposals(uint256) view returns(string,uint256,uint256,uint256,bool,uint8,address,bool)",
   "function vote(uint256,bool)",
   "function userPoints(address) view returns(uint256)",
   "function mintPoints(address)",
-  "function createProposal(string)",
+  "function createProposal(string,string,uint256,bool)",
   "function getVoteRate(uint256) view returns(uint256,uint256)",
   "function owner() view returns(address)",
   "function hasVoted(uint256,address) view returns(bool)"
 ];
 
-const CONTRACT_ADDRESS = "0xE3058B927d5ba871ce784139fA9827bc50414188";
+const CONTRACT_ADDRESS = "0xB3BE35a4f3f55F765bc882f694B4789Ed6aC8ca6";
 
 async function runTests() {
   console.log("=== 开始测试投票合约 ===");
@@ -45,21 +45,26 @@ async function runTests() {
   console.log(`  用户3: ${user3Addr}`);
   
   console.log("\n=== 测试阶段2: 创建新提案 ===");
-  const proposalTitles = [
-    "校园活动预算投票",
-    "班级委员会选举",
-    "课程改革提案"
+  const proposals = [
+    { title: "校园活动预算投票", description: "是否增加本学期活动经费", duration: 24 * 3600, usePoints: false },
+    { title: "班级委员会选举", description: "选举新一届班委成员", duration: 48 * 3600, usePoints: true },
+    { title: "课程改革提案", description: "是否调整专业课学分结构", duration: 72 * 3600, usePoints: false },
   ];
   
   const deployerContract = contract.connect(deployer);
   
-  for (let i = 0; i < proposalTitles.length; i++) {
+  for (let i = 0; i < proposals.length; i++) {
     try {
-      const tx = await deployerContract.createProposal(proposalTitles[i]);
+      const tx = await deployerContract.createProposal(
+        proposals[i].title,
+        proposals[i].description,
+        proposals[i].duration,
+        proposals[i].usePoints
+      );
       await tx.wait();
-      console.log(`提案 "${proposalTitles[i]}" 创建成功 (TX: ${tx.hash.slice(0, 10)}...)`);
+      console.log(`提案 "${proposals[i].title}" 创建成功 (TX: ${tx.hash.slice(0, 10)}...)`);
     } catch (error) {
-      console.log(`创建提案 "${proposalTitles[i]}" 失败: ${error.reason || error.message}`);
+      console.log(`创建提案 "${proposals[i].title}" 失败: ${error.reason || error.message}`);
     }
   }
   
@@ -75,6 +80,9 @@ async function runTests() {
     console.log(`  反对票: ${proposal[2]}`);
     console.log(`  结束时间: ${proposal[3]}`);
     console.log(`  是否存在: ${proposal[4]}`);
+    console.log(`  状态: ${proposal[5]}`);
+    console.log(`  创建者: ${proposal[6]}`);
+    console.log(`  需要积分: ${proposal[7]}`);
   }
   
   console.log("\n=== 测试阶段4: 发放积分 ===");
@@ -93,24 +101,30 @@ async function runTests() {
   }
   
   console.log("\n=== 测试阶段5: 用户投票 ===");
+  // 使用新创建的提案ID（从 newCount - 3 开始，因为创建了3个新提案）
+  const newCountNum = Number(newCount);
+  const firstNewProposalId = newCountNum - 3;
+  console.log(`新创建的提案ID范围: ${firstNewProposalId} - ${newCountNum - 1}`);
+  
   const votes = [
-    { signer: user1, proposalId: 0, support: true },
-    { signer: user1, proposalId: 1, support: true },
-    { signer: user2, proposalId: 0, support: false },
-    { signer: user2, proposalId: 1, support: false },
-    { signer: user3, proposalId: 0, support: true },
-    { signer: user3, proposalId: 1, support: true },
+    { signer: user1, proposalId: BigInt(firstNewProposalId), support: true },
+    { signer: user1, proposalId: BigInt(firstNewProposalId + 1), support: true },
+    { signer: user2, proposalId: BigInt(firstNewProposalId), support: false },
+    { signer: user2, proposalId: BigInt(firstNewProposalId + 1), support: false },
+    { signer: user3, proposalId: BigInt(firstNewProposalId), support: true },
+    { signer: user3, proposalId: BigInt(firstNewProposalId + 1), support: true },
   ];
   
   for (const vote of votes) {
     const userContract = contract.connect(vote.signer);
     const addr = await vote.signer.getAddress();
     try {
-      const tx = await userContract.vote(vote.proposalId, vote.support);
+      console.log(`用户 ${addr.slice(0, 6)} 尝试对提案${Number(vote.proposalId) + 1} ${vote.support ? '支持' : '反对'}...`);
+      const tx = await userContract.vote(vote.proposalId, vote.support, { gasLimit: 300000 });
       await tx.wait();
-      console.log(`用户 ${addr.slice(0, 6)} 对提案${vote.proposalId + 1} ${vote.support ? '支持' : '反对'} (TX: ${tx.hash.slice(0, 10)}...)`);
+      console.log(`用户 ${addr.slice(0, 6)} 对提案${Number(vote.proposalId) + 1} ${vote.support ? '支持' : '反对'}成功 (TX: ${tx.hash.slice(0, 10)}...)`);
     } catch (error) {
-      console.log(`用户 ${addr.slice(0, 6)} 投票失败: ${error.reason}`);
+      console.log(`用户 ${addr.slice(0, 6)} 投票失败: ${error.reason || error.message || '未知错误'}`);
     }
   }
   
@@ -145,6 +159,3 @@ async function runTests() {
 }
 
 runTests().catch(console.error);
-
-
-
